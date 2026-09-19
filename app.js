@@ -205,6 +205,27 @@
     h.checks.map((c) => ({ habitId: h.id, ...c }))
   );
 
+  const BLOCKER_TAGS = [
+    { id: "time", label: "זמן" },
+    { id: "energy", label: "אנרגיה" },
+    { id: "distract", label: "הסחות" },
+    { id: "forgot", label: "שכחתי" },
+    { id: "easy", label: "בחרתי בקל" },
+    { id: "other", label: "אחר" },
+  ];
+
+  const MIN_ACTIONS = {
+    1: "מינימום: 2 דקות Brain Dump ליד המיטה לפני השינה.",
+    2: "מינימום: מים + 5 דקות בלי מסך. זה כבר Input Fasting.",
+    3: "מינימום: עדיפות אחת + תודה אחת. משפך מצומצם עדיין משפך.",
+    4: "מינימום: שאלה אחת בוערת + יישום קצר אחד.",
+    5: "מינימום: הסרת הסחה אחת קטנה מהסביבה.",
+    6: "מינימום: מספר אחד של כוכב הצפון — בלי סיפור.",
+    7: "מינימום: ניצחון קטן אחד. עשוי עדיף ממושלם.",
+    8: "מינימום: בחירה קשה אחת קטנה היום — ואמרי: מצוין.",
+  };
+
+
   function relevantChecks(habit, dayKey) {
     return habit.checks.filter((c) => !c.sundayOnly || isSunday(dayKey));
   }
@@ -239,6 +260,7 @@
       key: dayKey,
       checks: {},
       fields: {},
+      reflections: {}, // habitId -> { how, blocker, tags[] }
       dailyScore: null, // 1-10 subjective
       note: "",
       updatedAt: null,
@@ -265,7 +287,34 @@
 
   function getDay(dayKey) {
     if (!state.days[dayKey]) state.days[dayKey] = emptyDay(dayKey);
-    return state.days[dayKey];
+    const day = state.days[dayKey];
+    if (!day.reflections || typeof day.reflections !== "object") day.reflections = {};
+    return day;
+  }
+
+  function getReflection(day, habitId) {
+    const id = String(habitId);
+    if (!day.reflections[id]) day.reflections[id] = { how: "", blocker: "", tags: [] };
+    const r = day.reflections[id];
+    if (!Array.isArray(r.tags)) r.tags = [];
+    if (r.how == null) r.how = "";
+    if (r.blocker == null) r.blocker = "";
+    return r;
+  }
+
+  function setReflection(habitId, patch) {
+    const day = getDay(todayKey());
+    const r = getReflection(day, habitId);
+    if (patch.how !== undefined) r.how = patch.how;
+    if (patch.blocker !== undefined) r.blocker = patch.blocker;
+    if (patch.tags !== undefined) r.tags = patch.tags;
+    day.updatedAt = new Date().toISOString();
+    saveState();
+  }
+
+  function reflectionHasContent(r) {
+    if (!r) return false;
+    return !!(String(r.how || "").trim() || String(r.blocker || "").trim() || (r.tags && r.tags.length));
   }
 
   function dayCompletion(dayKey) {
@@ -284,7 +333,12 @@
   function isDayActive(dayKey) {
     const day = state.days[dayKey];
     if (!day) return false;
-    return Object.values(day.checks).some(Boolean) || Object.values(day.fields).some((v) => v !== "" && v != null);
+    const hasCheck = Object.values(day.checks).some(Boolean);
+    const hasField = Object.values(day.fields).some((v) => v !== "" && v != null);
+    const hasRef =
+      day.reflections &&
+      Object.values(day.reflections).some((r) => reflectionHasContent(r));
+    return hasCheck || hasField || hasRef || !!(day.note && String(day.note).trim()) || day.dailyScore != null;
   }
 
   function heatLevel(ratio) {
@@ -354,6 +408,307 @@
     });
     const avg = activeDays ? Math.round((sumRatio / activeDays) * 100) : 0;
     return { activeDays, totalChecks, avg, bestStreak, currentStreak: computeStreak() };
+  }
+
+  /* ---------- Insights engine (client-side) ---------- */
+  function habitDayDone(habit, dayKey) {
+    const day = state.days[dayKey];
+    if (!day) return false;
+    const checks = relevantChecks(habit, dayKey);
+    if (!checks.length) return false;
+    const done = checks.filter((ch) => day.checks[`${habit.id}:${ch.key}`]).length;
+    return done === checks.length;
+  }
+
+  function habitDayPartial(habit, dayKey) {
+    const day = state.days[dayKey];
+    if (!day) return { done: 0, total: 0, ratio: 0 };
+    const checks = relevantChecks(habit, dayKey);
+    const total = checks.length;
+    let done = 0;
+    checks.forEach((ch) => {
+      if (day.checks[`${habit.id}:${ch.key}`]) done++;
+    });
+    return { done, total, ratio: total ? done / total : 0 };
+  }
+
+  function gatherReflectionWindow(daysBack = 14) {
+    const today = todayKey();
+    const rows = [];
+    for (let i = 0; i < daysBack; i++) {
+      const dk = addDaysKey(today, -i);
+      const day = state.days[dk];
+      if (!day) continue;
+      HABITS.forEach((h) => {
+        const partial = habitDayPartial(h, dk);
+        const ref = day.reflections && day.reflections[String(h.id)];
+        rows.push({
+          dayKey: dk,
+          habit: h,
+          partial,
+          fullyDone: partial.total > 0 && partial.done === partial.total,
+          skipped: partial.total > 0 && partial.done === 0 && (isDayActive(dk) || !!day.updatedAt),
+          ref: ref || null,
+        });
+      });
+    }
+    return rows;
+  }
+
+  function blockerTip(tagId, habit) {
+    if (tagId === "distract") {
+      if (habit.id === 2) {
+        return "הסחות חוזרות בבוקר? הגני את הטלפון בחדר אחר ב־60 הדקות הראשונות — Input Fasting בלי משא ומתן.";
+      }
+      return `הסחות חוזרות ב«${habit.title}»? עצבי מראש את הסביבה (הרגל 5) כדי שהפעולה הנכונה תהיה הקלה ביותר.`;
+    }
+    if (tagId === "time") {
+      return "חוזרת תחושת «אין זמן»? הקטיני את המינימום — כמה דקות עדיפות על אפס. מומנטום נבנה מניצחונות קטנים (הרגל 7).";
+    }
+    if (tagId === "energy") {
+      return "אנרגיה נמוכה חוזרת? בדקי שינה ותכנון לילה (הרגל 1) — התשתית הביולוגית מזינה את כל השאר.";
+    }
+    if (tagId === "forgot") {
+      return "שוכחת שוב ושוב? קשרי את ההרגל לטריגר קיים (אחרי קפה / אחרי צחצוח) או תזכורת אחת עדינה.";
+    }
+    if (tagId === "easy") {
+      return "«בחרתי בקל» חוזר? זה בדיוק הרגל 8 — בחירה בקושי. התחילי בקושי קטן אחד ביום, בכתב.";
+    }
+    return null;
+  }
+
+  function encouragementCopy(todayComp, misses) {
+    const yesterday = addDaysKey(todayKey(), -1);
+    const yComp = dayCompletion(yesterday);
+    const recovered = (yComp.done === 0 && !isDayActive(yesterday)) && (todayComp.done > 0 || isDayActive(todayKey()));
+    if (recovered) {
+      return {
+        kind: "recovered",
+        title: "חזרת — זה המומנטום",
+        body: "אתמול היה ריק והיום יש סימון. מותר יום אחד; אסור שני ימים ברצף. עשוי עדיף ממושלם.",
+      };
+    }
+    if (misses >= 2) {
+      return {
+        kind: "two_miss",
+        title: "שני ימים — נגיעה עדינה",
+        body: "שני ימים ברצף שוברים מומנטום. מספיק מינימום קטן אחד היום (הרגל 7) כדי לחזור — בלי בושה.",
+      };
+    }
+    if (misses === 1) {
+      return {
+        kind: "one_miss",
+        title: "יום אחד — בסדר גמור",
+        body: "החמצה אחת לא מוחקת התקדמות. היום בוחרים פעולה קטנה וחוזרים לרצף.",
+      };
+    }
+    if (todayComp.ratio >= 0.7 && todayComp.done > 0) {
+      return {
+        kind: "strong",
+        title: "יום חזק",
+        body: `את על ${Math.round(todayComp.ratio * 100)}% היום. חגגי ניצחון קטן (הרגל 7) ושמרי על בחירה בקושי אחת (הרגל 8).`,
+      };
+    }
+    if (todayComp.done > 0) {
+      return {
+        kind: "building",
+        title: "בתנועה",
+        body: "יש סימונים היום — ממשיכים בצעדים קטנים. המומנטום נשמר במפה גם אחרי מעידה.",
+      };
+    }
+    return {
+      kind: "fresh",
+      title: "יום חדש",
+      body: "בחרי הרגל אחד להתחיל בו. מינימום קטן עדיף על תוכנית מושלמת שלא קורה.",
+    };
+  }
+
+  function computeInsights(opts = {}) {
+    const windowDays = opts.windowDays || 14;
+    const maxCards = opts.maxCards || 4;
+    const rows = gatherReflectionWindow(windowDays);
+    const cards = [];
+    const todayComp = dayCompletion(todayKey());
+    const misses = missStreakInfo(todayKey());
+    const encour = encouragementCopy(todayComp, misses);
+    cards.push({
+      id: "encouragement",
+      tone: encour.kind === "strong" || encour.kind === "recovered" ? "celebrate" : encour.kind === "two_miss" ? "warn" : "soft",
+      title: encour.title,
+      body: encour.body,
+      habitIds: [7, 8],
+    });
+
+    // Repeated blockers per habit (tag counts)
+    const tagCounts = {}; // habitId -> tagId -> count
+    rows.forEach((row) => {
+      if (!row.ref || !row.ref.tags) return;
+      row.ref.tags.forEach((tid) => {
+        const hid = row.habit.id;
+        if (!tagCounts[hid]) tagCounts[hid] = {};
+        tagCounts[hid][tid] = (tagCounts[hid][tid] || 0) + 1;
+      });
+    });
+    const blockerHits = [];
+    Object.entries(tagCounts).forEach(([hid, tags]) => {
+      Object.entries(tags).forEach(([tid, count]) => {
+        if (count >= 3) blockerHits.push({ habitId: Number(hid), tagId: tid, count });
+      });
+    });
+    blockerHits.sort((a, b) => b.count - a.count);
+    blockerHits.slice(0, 2).forEach((hit) => {
+      const habit = HABITS.find((h) => h.id === hit.habitId);
+      if (!habit) return;
+      const tip = blockerTip(hit.tagId, habit);
+      const tagLabel = (BLOCKER_TAGS.find((t) => t.id === hit.tagId) || {}).label || hit.tagId;
+      if (!tip) return;
+      cards.push({
+        id: `blocker-${hit.habitId}-${hit.tagId}`,
+        tone: "coach",
+        title: `דפוס: ${tagLabel} ב«${habit.title}»`,
+        body: `${tip} (${hit.count}× ב־${windowDays} הימים האחרונים)`,
+        habitIds: [habit.id, habit.id === 2 ? 5 : 7],
+      });
+    });
+
+    // Often skipped habits (among active days in window)
+    const activeDayKeys = new Set();
+    for (let i = 0; i < windowDays; i++) {
+      const dk = addDaysKey(todayKey(), -i);
+      if (isDayActive(dk) || dayCompletion(dk).done > 0) activeDayKeys.add(dk);
+    }
+    const activeN = activeDayKeys.size;
+    if (activeN >= 4) {
+      const skipStats = HABITS.map((h) => {
+        let considered = 0;
+        let full = 0;
+        let any = 0;
+        activeDayKeys.forEach((dk) => {
+          const p = habitDayPartial(h, dk);
+          if (p.total === 0) return;
+          considered++;
+          if (p.done === p.total) full++;
+          if (p.done > 0) any++;
+        });
+        const skipRate = considered ? 1 - any / considered : 0;
+        const fullRate = considered ? full / considered : 0;
+        return { habit: h, considered, full, any, skipRate, fullRate };
+      });
+      const skipped = skipStats
+        .filter((s) => s.considered >= 4 && s.skipRate >= 0.5)
+        .sort((a, b) => b.skipRate - a.skipRate);
+      skipped.slice(0, 1).forEach((s) => {
+        cards.push({
+          id: `skip-${s.habit.id}`,
+          tone: "soft",
+          title: `«${s.habit.title}» מחכה למינימום קטן`,
+          body: `${MIN_ACTIONS[s.habit.id] || "הקטיני את הרף."} עשוי עדיף ממושלם — הרגל 7.`,
+          habitIds: [s.habit.id, 7],
+        });
+      });
+      const wins = skipStats
+        .filter((s) => s.considered >= 5 && s.fullRate >= 0.7)
+        .sort((a, b) => b.fullRate - a.fullRate);
+      wins.slice(0, 1).forEach((s) => {
+        cards.push({
+          id: `win-${s.habit.id}`,
+          tone: "celebrate",
+          title: `עקביות ב«${s.habit.title}»`,
+          body: `השלמת מלאה ב־${Math.round(s.fullRate * 100)}% מהימים הפעילים. זה מומנטום אמיתי — תמשיכי לחגוג ניצחונות קטנים.`,
+          habitIds: [s.habit.id, 7],
+        });
+      });
+    }
+
+    // Free-text blockers mentioning patterns (light)
+    const textBlockers = [];
+    rows.forEach((row) => {
+      const b = row.ref && String(row.ref.blocker || "").trim();
+      if (b) textBlockers.push({ habit: row.habit, text: b, dayKey: row.dayKey });
+    });
+    if (textBlockers.length >= 3 && cards.length < maxCards) {
+      const recent = textBlockers.slice(0, 3).map((x) => x.habit.title);
+      const unique = [...new Set(recent)];
+      cards.push({
+        id: "notes-pattern",
+        tone: "coach",
+        title: "יש לך תשובות — בואי נלמד מהן",
+        body: `כתבת «מה עצר אותי» על ${textBlockers.length} הרגלים לאחרונה (${unique.slice(0, 2).join(", ")}…). בסקירה השבועית אפשר לזקק לקח אחד ולתרגם לבחירה בקושי (הרגל 8).`,
+        habitIds: [8, 7],
+      });
+    }
+
+    // Dedupe by id, limit
+    const seen = new Set();
+    const out = [];
+    for (const c of cards) {
+      if (seen.has(c.id)) continue;
+      seen.add(c.id);
+      out.push(c);
+      if (out.length >= maxCards) break;
+    }
+    return out;
+  }
+
+  function renderInsightCardsHtml(insights, opts = {}) {
+    if (!insights || !insights.length) return "";
+    const heading = opts.heading || "תובנות מהימים האחרונים";
+    const sub = opts.sub || "בלי בושה — דפוסים + צעד קטן אחד קדימה";
+    const cards = insights
+      .map((c) => {
+        const tone = c.tone || "soft";
+        return `<article class="insight-card tone-${escapeHtml(tone)}">
+          <h3>${escapeHtml(c.title)}</h3>
+          <p>${escapeHtml(c.body)}</p>
+        </article>`;
+      })
+      .join("");
+    return `<section class="card insights-block">
+      <h2>${escapeHtml(heading)}</h2>
+      <p class="muted" style="margin-bottom:10px">${escapeHtml(sub)}</p>
+      <div class="insights-grid">${cards}</div>
+    </section>`;
+  }
+
+  function weeklyAutoSuggestions(weekDays) {
+    const tagCount = {};
+    const wins = [];
+    const howNotes = [];
+    weekDays.forEach((dk) => {
+      if (dk > todayKey()) return;
+      const day = state.days[dk];
+      if (!day) return;
+      HABITS.forEach((h) => {
+        const p = habitDayPartial(h, dk);
+        const ref = day.reflections && day.reflections[String(h.id)];
+        if (p.total && p.done === p.total) {
+          const how = ref && String(ref.how || "").trim();
+          wins.push(how ? `${h.title}: ${how}` : h.title);
+        }
+        if (ref) {
+          (ref.tags || []).forEach((tid) => {
+            tagCount[tid] = (tagCount[tid] || 0) + 1;
+          });
+          const b = String(ref.blocker || "").trim();
+          if (b) howNotes.push(`${h.title}: ${b}`);
+        }
+      });
+    });
+    const topTags = Object.entries(tagCount)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([tid, n]) => {
+        const label = (BLOCKER_TAGS.find((t) => t.id === tid) || {}).label || tid;
+        return `${label} (${n}×)`;
+      });
+    const winSample = [...new Set(wins)].slice(0, 5);
+    const lessonBits = [];
+    if (topTags.length) lessonBits.push("חוסמים חוזרים: " + topTags.join(", "));
+    howNotes.slice(0, 4).forEach((n) => lessonBits.push(n));
+    return {
+      winsSuggest: winSample.length ? winSample.map((w) => "• " + w).join("\n") : "",
+      lessonsSuggest: lessonBits.length ? lessonBits.map((w) => "• " + w).join("\n") : "",
+    };
   }
 
   /* ---------- UI helpers ---------- */
@@ -503,6 +858,47 @@
       </section>`;
     }).join("");
 
+    // End-of-day reflection per habit
+    const reflectionRows = HABITS.map((h) => {
+      const r = getReflection(day, h.id);
+      const checks = relevantChecks(h, key);
+      const doneH = checks.filter((ch) => day.checks[`${h.id}:${ch.key}`]).length;
+      const incomplete = checks.length > 0 && doneH < checks.length;
+      const tagsHtml = BLOCKER_TAGS.map((t) => {
+        const on = (r.tags || []).includes(t.id) ? "on" : "";
+        return `<button type="button" class="blocker-tag ${on}" data-ref-habit="${h.id}" data-tag="${t.id}">${escapeHtml(t.label)}</button>`;
+      }).join("");
+      return `<div class="reflect-habit" data-reflect="${h.id}">
+        <div class="reflect-habit-head">
+          <strong><span class="habit-num">${h.id}</span> ${escapeHtml(h.title)}</strong>
+          ${incomplete ? '<span class="chip warn">לא הושלם</span>' : doneH === checks.length && checks.length ? '<span class="chip ok">הושלם</span>' : ""}
+        </div>
+        <div class="field">
+          <label>איך היה</label>
+          <textarea data-ref-habit="${h.id}" data-ref-field="how" rows="2" placeholder="בקצרה — מה עבד / איך הרגשת…">${escapeHtml(r.how || "")}</textarea>
+        </div>
+        <div class="field ${incomplete ? "" : "optional-blocker"}">
+          <label>מה עצר אותי ${incomplete ? "" : '<span class="muted">(אופציונלי)</span>'}</label>
+          <div class="blocker-tags" role="group" aria-label="תגיות חוסמים">${tagsHtml}</div>
+          <textarea data-ref-habit="${h.id}" data-ref-field="blocker" rows="2" placeholder="זמן? אנרגיה? הסחות?…">${escapeHtml(r.blocker || "")}</textarea>
+        </div>
+      </div>`;
+    }).join("");
+
+    const lightInsights = computeInsights({ windowDays: 14, maxCards: 2 });
+    const lightInsightsHtml =
+      lightInsights.length > 1
+        ? renderInsightCardsHtml(lightInsights.slice(0, 2), {
+            heading: "תובנה קצרה להיום",
+            sub: "מבוסס על הסימונים והסיכומים שלך",
+          })
+        : lightInsights.length === 1
+        ? renderInsightCardsHtml(lightInsights, {
+            heading: "תובנה קצרה להיום",
+            sub: "מבוסס על הסימונים והסיכומים שלך",
+          })
+        : "";
+
     // Daily score
     const score = day.dailyScore;
     const scoreCard = `
@@ -519,15 +915,25 @@
         </div>
       </section>`;
 
-    main.innerHTML = nudge + ring + habitsHtml + scoreCard;
+    const eodCard = `
+      <section class="card eod-card" id="eod-reflection">
+        <h2>סיכום יום</h2>
+        <p class="muted">לכל הרגל — כמה מילים בסוף היום. נשמר בהיסטוריה ועוזר לזהות דפוסים.</p>
+        ${reflectionRows}
+      </section>`;
+
+    main.innerHTML = nudge + ring + lightInsightsHtml + habitsHtml + eodCard + scoreCard;
     bindTodayEvents();
   }
 
   function bindTodayEvents() {
     main.querySelectorAll('input[type="checkbox"][data-check]').forEach((el) => {
       el.addEventListener("change", () => {
+        // flush in-progress reflection text before re-render
+        main.querySelectorAll("textarea[data-ref-field]").forEach((ta) => {
+          setReflection(Number(ta.dataset.refHabit), { [ta.dataset.refField]: ta.value });
+        });
         setCheck(Number(el.dataset.habit), el.dataset.check, el.checked);
-        // soft refresh chips without full rerender flicker — re-render for accuracy
         renderToday();
         updateHeader();
       });
@@ -561,6 +967,30 @@
         saveState();
       });
     }
+
+    main.querySelectorAll("textarea[data-ref-field]").forEach((el) => {
+      const save = () => {
+        const hid = Number(el.dataset.refHabit);
+        const field = el.dataset.refField;
+        setReflection(hid, { [field]: el.value });
+      };
+      el.addEventListener("change", save);
+      el.addEventListener("blur", save);
+    });
+
+    main.querySelectorAll("button.blocker-tag").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const hid = Number(btn.dataset.refHabit);
+        const tag = btn.dataset.tag;
+        const day = getDay(todayKey());
+        const r = getReflection(day, hid);
+        const set = new Set(r.tags || []);
+        if (set.has(tag)) set.delete(tag);
+        else set.add(tag);
+        setReflection(hid, { tags: [...set] });
+        btn.classList.toggle("on");
+      });
+    });
   }
 
   function renderProgress() {
@@ -676,6 +1106,11 @@
         <p class="muted">${escapeHtml(state.settings.northstarName || "מדד כוכב הצפון")}</p>
         ${nsRows || '<div class="empty-state">עדיין אין ערכים — מלאי בהרגל 6 במסך היום</div>'}
       </section>
+
+      ${renderInsightCardsHtml(computeInsights({ windowDays: 14, maxCards: 4 }), {
+        heading: "תובנות ודפוסים",
+        sub: "מסיכומי היום והסימונים · בלי בושה · צעד קטן אחד",
+      })}
     `;
 
     main.querySelectorAll(".hm-cell[data-day]").forEach((el) => {
@@ -783,6 +1218,13 @@
     const days = [];
     for (let i = 0; i < 7; i++) days.push(addDaysKey(ws, i));
     const review = state.weekly[ws] || { notes: "", wins: "", lessons: "", nextFocus: "", completed: false };
+    const auto = weeklyAutoSuggestions(days);
+    const winsValue = review.wins || auto.winsSuggest || "";
+    const lessonsValue = review.lessons || auto.lessonsSuggest || "";
+    const autoHint =
+      (!review.wins && auto.winsSuggest) || (!review.lessons && auto.lessonsSuggest)
+        ? `<p class="muted auto-suggest-hint">מילאתי הצעות מסיכומי השבוע — אפשר לערוך לפני השמירה.</p>`
+        : "";
 
     const dayRows = days
       .map((dk) => {
@@ -822,10 +1264,11 @@
       <section class="card">
         <h2>פונקציית אילוץ</h2>
         <p class="muted">דיבור כנה עם עצמך על הנתונים — מחויבות קשיחה לשבוע הבא</p>
+        ${autoHint}
         <div class="field"><label>ניצחונות השבוע</label>
-          <textarea id="w-wins" placeholder="מה עבד…">${escapeHtml(review.wins || "")}</textarea></div>
+          <textarea id="w-wins" placeholder="מה עבד…">${escapeHtml(winsValue)}</textarea></div>
         <div class="field"><label>לקחים</label>
-          <textarea id="w-lessons" placeholder="מה ללמוד…">${escapeHtml(review.lessons || "")}</textarea></div>
+          <textarea id="w-lessons" placeholder="מה ללמוד…">${escapeHtml(lessonsValue)}</textarea></div>
         <div class="field"><label>מיקוד לשבוע הבא</label>
           <textarea id="w-next" placeholder="עדיפות אחת ברורה…">${escapeHtml(review.nextFocus || "")}</textarea></div>
         <div class="field"><label>הערות נוספות</label>
@@ -910,7 +1353,7 @@
       <section class="card">
         <h2>אודות</h2>
         <p class="muted">מומנטום — מערכת הפעלה אישית. אפליקציה אישית ללא חשבונות וללא רשת חברתית. אזור זמן: Asia/Jerusalem.</p>
-        <p class="muted" style="margin-top:6px">גרסה 1.0 · נשמר לאחרונה: ${escapeHtml(state.savedAt ? new Date(state.savedAt).toLocaleString("he-IL", { timeZone: TZ }) : "—")}</p>
+        <p class="muted" style="margin-top:6px">גרסה 1.1 · סיכום יום + תובנות · נשמר לאחרונה: ${escapeHtml(state.savedAt ? new Date(state.savedAt).toLocaleString("he-IL", { timeZone: TZ }) : "—")}</p>
       </section>
     `;
 
