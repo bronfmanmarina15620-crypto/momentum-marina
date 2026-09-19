@@ -1,5 +1,5 @@
 /* Service worker — cache shell for offline */
-const CACHE = "momentum-marina-v1.2";
+const CACHE = "momentum-marina-v1.3";
 const BASE = self.registration.scope;
 const ASSETS = [
   BASE,
@@ -10,6 +10,8 @@ const ASSETS = [
   BASE + "icons/icon.svg",
   BASE + "icons/icon-192.png",
   BASE + "icons/icon-512.png",
+  BASE + "icons/icon-maskable-192.png",
+  BASE + "icons/icon-maskable-512.png",
 ];
 
 self.addEventListener("install", (event) => {

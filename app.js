@@ -10,7 +10,118 @@
     return "./";
   })();
 
-  /* ---------- Date helpers (Asia/Jerusalem) ---------- */
+  /* ---------- PWA install helpers ---------- */
+  let deferredInstallPrompt = null;
+  let installUiReady = false;
+  let relatedAppsInstalled = false;
+
+  function isStandaloneDisplay() {
+    return (
+      window.matchMedia("(display-mode: standalone)").matches ||
+      window.matchMedia("(display-mode: fullscreen)").matches ||
+      window.matchMedia("(display-mode: minimal-ui)").matches ||
+      // iOS Safari "Add to Home Screen"
+      window.navigator.standalone === true
+    );
+  }
+
+  function isInAppBrowser() {
+    if (isStandaloneDisplay()) return false;
+    const ua = navigator.userAgent || "";
+    // Common in-app WebViews (WhatsApp, Facebook, Instagram, etc.)
+    if (/FBAN|FBAV|FB_IAB|Instagram|Line\/|WhatsApp|Twitter|LinkedInApp|Snapchat|Messenger|TikTok|BytedanceWebview|MicroMessenger|Pinterest|Discord/i.test(ua)) {
+      return true;
+    }
+    // Android WebView marker
+    if (/;\s*wv\)/i.test(ua) || /\bwv\b/i.test(ua)) return true;
+    if (/WebView/i.test(ua)) return true;
+    // Android Chrome-like UA without Safari token often means WebView
+    if (/Android/i.test(ua) && /Version\/\d+\.?\d*/i.test(ua) && /Chrome\//i.test(ua) && !/Safari\//i.test(ua)) {
+      return true;
+    }
+    return false;
+  }
+
+  function canShowInstallUi() {
+    if (isStandaloneDisplay() || relatedAppsInstalled) return false;
+    return true;
+  }
+
+  function installInstructionsText() {
+    return (
+      "התקנה למסך הבית:\n\n" +
+      "1. פתחי את הקישור ב־Chrome (לא בוואטסאפ / אינסטגרם).\n" +
+      "2. תפריט ⋮ ← «הוסף למסך הבית» או «התקן אפליקציה».\n\n" +
+      "ב־iPhone (Safari): שתף ← הוסף למסך הבית.\n\n" +
+      "אם אין כפתור התקן — ודאי שנפתח ב־Chrome מהכתובת github.io."
+    );
+  }
+
+  async function promptInstall() {
+    if (deferredInstallPrompt) {
+      try {
+        deferredInstallPrompt.prompt();
+        const choice = await deferredInstallPrompt.userChoice;
+        deferredInstallPrompt = null;
+        if (choice && choice.outcome === "accepted") {
+          toast("הותקן! חפשי את מומנטום במסך הבית");
+          updateInstallUi();
+          return;
+        }
+      } catch (_) {
+        /* fall through to instructions */
+      }
+    }
+    alert(installInstructionsText());
+  }
+
+  function updateInstallUi() {
+    const show = canShowInstallUi();
+    const headerBtn = document.getElementById("header-install-btn");
+    if (headerBtn) {
+      headerBtn.hidden = !show;
+      headerBtn.onclick = show ? () => promptInstall() : null;
+    }
+    const banner = document.getElementById("webview-banner");
+    if (banner) {
+      banner.hidden = !(show && isInAppBrowser());
+    }
+    // Re-render current screen so install cards stay in sync
+    if (installUiReady && (currentScreen === "today" || currentScreen === "settings")) {
+      // Avoid recursion during first boot: only refresh install widgets in-place when possible
+      const todayBtn = document.getElementById("today-install-btn");
+      const settingsBtn = document.getElementById("settings-install-btn");
+      const todayCard = document.getElementById("today-install-card");
+      const settingsCard = document.getElementById("settings-install-card");
+      if (todayCard) todayCard.hidden = !show;
+      if (settingsCard) settingsCard.hidden = !show;
+      if (todayBtn) todayBtn.hidden = !show;
+      if (settingsBtn) settingsBtn.hidden = !show;
+    }
+  }
+
+  function installCardHtml(idPrefix) {
+    if (!canShowInstallUi()) return "";
+    const hasPrompt = !!deferredInstallPrompt;
+    const fallback = hasPrompt
+      ? ""
+      : `<p class="install-fallback">אם הכפתור לא פותח התקנה (Samsung/Chrome): תפריט <kbd>⋮</kbd> ← <strong>הוסף למסך הבית</strong> / <strong>התקן אפליקציה</strong>. חובה לפתוח ב־Chrome, לא בוואטסאפ.</p>`;
+    return `<section class="card install-card" id="${idPrefix}-install-card">
+      <h2>התקנה למסך הבית</h2>
+      <p class="muted">לחיצה אחת — מומנטום כקיצור במסך הבית, במסך מלא בלי שורת כתובת.</p>
+      <button type="button" class="btn install-btn block" id="${idPrefix}-install-btn">התקן למסך הבית</button>
+      ${fallback}
+    </section>`;
+  }
+
+  function bindInstallButtons() {
+    ["today-install-btn", "settings-install-btn", "header-install-btn"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el && !el.hidden) el.onclick = () => promptInstall();
+    });
+  }
+
+  /* ---------- Date helpers (Asia/Jerusalem) ---------- 
   function jerusalemParts(d = new Date()) {
     const fmt = new Intl.DateTimeFormat("en-CA", {
       timeZone: TZ,
@@ -962,7 +1073,8 @@
         ${reflectionRows}
       </section>`;
 
-    main.innerHTML = nudge + ring + lightInsightsHtml + habitsHtml + eodCard + scoreCard;
+    main.innerHTML = nudge + installCardHtml("today") + ring + lightInsightsHtml + habitsHtml + eodCard + scoreCard;
+    bindInstallButtons();
     bindTodayEvents();
   }
 
@@ -1398,18 +1510,25 @@
           <button type="button" class="btn secondary" id="import-json">ייבוא JSON</button>
         </div>
         <input type="file" id="import-file" accept="application/json,.json" hidden />
-        <div class="btn-row" style="margin-top:12px">
-          <button type="button" class="btn ghost" id="install-hint">איך להתקין למסך הבית</button>
-        </div>
         <div class="btn-row">
           <button type="button" class="btn danger" id="reset-data">איפוס כל הנתונים</button>
         </div>
       </section>
 
+      ${installCardHtml("settings")}
+      ${canShowInstallUi() ? `<section class="card" id="settings-install-fallback-card">
+        <h2>איך להתקין (אם אין כפתור)</h2>
+        <p class="install-fallback">פתחי ב־<strong>Chrome</strong> (לא בוואטסאפ): תפריט <kbd>⋮</kbd> ← <strong>הוסף למסך הבית</strong> / <strong>התקן אפליקציה</strong>.</p>
+        <p class="install-fallback">ב־iPhone (Safari): שתף ← הוסף למסך הבית.</p>
+        <div class="btn-row">
+          <button type="button" class="btn ghost" id="install-hint">הצג הוראות מלאות</button>
+        </div>
+      </section>` : ""}
+
       <section class="card">
         <h2>אודות</h2>
         <p class="muted">מומנטום — מערכת הפעלה אישית. אפליקציה אישית ללא חשבונות וללא רשת חברתית. אזור זמן: Asia/Jerusalem.</p>
-        <p class="muted" style="margin-top:6px">גרסה 1.2 · מדדים ברורים יותר · נשמר לאחרונה: ${escapeHtml(state.savedAt ? new Date(state.savedAt).toLocaleString("he-IL", { timeZone: TZ }) : "—")}</p>
+        <p class="muted" style="margin-top:6px">גרסה 1.3 · התקנה למסך הבית · נשמר לאחרונה: ${escapeHtml(state.savedAt ? new Date(state.savedAt).toLocaleString("he-IL", { timeZone: TZ }) : "—")}</p>
       </section>
     `;
 
@@ -1482,13 +1601,10 @@
       reader.readAsText(file);
     };
 
-    document.getElementById("install-hint").onclick = () => {
-      alert(
-        "התקנה למסך הבית:\n\n" +
-          "• iPhone (Safari): שתף ← הוסף למסך הבית\n" +
-          "• Android (Chrome): תפריט ⋮ ← התקן אפליקציה / הוסף למסך הבית\n\n" +
-          "האפליקציה תיפתח במסך מלא ותשמור את הנתונים במכשיר."
-      );
+    bindInstallButtons();
+    const hintBtn = document.getElementById("install-hint");
+    if (hintBtn) {
+      hintBtn.onclick = () => alert(installInstructionsText());
     };
 
     document.getElementById("reset-data").onclick = () => {
@@ -1557,14 +1673,42 @@
   });
 
   /* ---------- PWA ---------- */
+  // Eager SW registration (do not wait for window load)
   if ("serviceWorker" in navigator) {
-    window.addEventListener("load", () => {
-      navigator.serviceWorker.register(`${BASE}sw.js`).catch(() => {});
-    });
+    navigator.serviceWorker.register(`${BASE}sw.js`).catch(() => {});
+  }
+
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    updateInstallUi();
+    if (currentScreen === "today") renderToday();
+    else if (currentScreen === "settings") renderSettings();
+  });
+
+  window.addEventListener("appinstalled", () => {
+    deferredInstallPrompt = null;
+    relatedAppsInstalled = true;
+    toast("מומנטום הותקן במסך הבית");
+    updateInstallUi();
+    if (currentScreen === "today") renderToday();
+    else if (currentScreen === "settings") renderSettings();
+  });
+
+  // getInstalledRelatedApps (Chrome/Android) — hide install if already present
+  if (navigator.getInstalledRelatedApps) {
+    navigator.getInstalledRelatedApps().then((apps) => {
+      if (apps && apps.length) {
+        relatedAppsInstalled = true;
+        updateInstallUi();
+      }
+    }).catch(() => {});
   }
 
   /* ---------- Boot ---------- */
   updateHeader();
+  updateInstallUi();
+  installUiReady = true;
   switchScreen("today");
   // Refresh header at midnight Jerusalem roughly every minute near day change
   setInterval(() => {

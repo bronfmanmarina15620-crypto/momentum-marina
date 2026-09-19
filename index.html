@@ -8,6 +8,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="מומנטום" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
@@ -16,6 +17,11 @@
 </head>
 <body>
   <div id="app">
+    <div id="webview-banner" class="webview-banner" hidden role="status">
+      <strong>לפתיחה בכרום:</strong> תפריט ⋮ ← פתח בכרום
+      <span class="webview-banner-sub">התקנה למסך הבית זמינה רק בדפדפן Chrome (לא בוואטסאפ)</span>
+    </div>
+
     <header class="app-header">
       <div class="brand">
         <span class="brand-mark" aria-hidden="true">◆</span>
@@ -27,6 +33,9 @@
       <div class="header-meta">
         <span id="today-label" class="today-label"></span>
         <span id="streak-badge" class="streak-badge" title="רצף ימים"></span>
+        <button type="button" id="header-install-btn" class="btn install-btn header-install" hidden>
+          התקן למסך הבית
+        </button>
       </div>
     </header>
 
