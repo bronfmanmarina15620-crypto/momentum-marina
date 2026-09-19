@@ -627,3 +627,15 @@ button.linkish {
   font-size: 1rem;
   padding: 12px 16px;
 }
+
+.install-steps {
+  margin: 8px 0 14px;
+  padding-inline-start: 1.2rem;
+  line-height: 1.55;
+  color: var(--text, #2b2118);
+}
+.install-steps li { margin-bottom: 6px; }
+.install-card {
+  border: 2px solid #c45c26;
+  background: #fff8f2;
+}

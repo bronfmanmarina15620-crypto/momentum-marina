@@ -102,15 +102,16 @@
 
   function installCardHtml(idPrefix) {
     if (!canShowInstallUi()) return "";
-    const hasPrompt = !!deferredInstallPrompt;
-    const fallback = hasPrompt
-      ? ""
-      : `<p class="install-fallback">אם הכפתור לא פותח התקנה (Samsung/Chrome): תפריט <kbd>⋮</kbd> ← <strong>הוסף למסך הבית</strong> / <strong>התקן אפליקציה</strong>. חובה לפתוח ב־Chrome, לא בוואטסאפ.</p>`;
     return `<section class="card install-card" id="${idPrefix}-install-card">
-      <h2>התקנה למסך הבית</h2>
-      <p class="muted">לחיצה אחת — מומנטום כקיצור במסך הבית, במסך מלא בלי שורת כתובת.</p>
-      <button type="button" class="btn install-btn block" id="${idPrefix}-install-btn">התקן למסך הבית</button>
-      ${fallback}
+      <h2>הוספה למסך הבית</h2>
+      <p class="muted">אם הכפתור למטה לא פותח חלון התקנה — עשי ידנית בכרום:</p>
+      <ol class="install-steps">
+        <li>לחצי על <strong>⋮</strong> למעלה בכרום</li>
+        <li>בחרי <strong>הוסף למסך הבית</strong> או <strong>התקן אפליקציה</strong></li>
+        <li>אשרי — יופיע אייקון «מומנטום»</li>
+      </ol>
+      <button type="button" class="btn install-btn block" id="${idPrefix}-install-btn">נסה התקנה אוטומטית</button>
+      <p class="install-fallback">אין את האפשרות בתפריט? בכרום: כתובת האתר ← סמל התקנה / תפריט ← <strong>הוסף למסך הבית</strong>.</p>
     </section>`;
   }
 
@@ -121,7 +122,7 @@
     });
   }
 
-  /* ---------- Date helpers (Asia/Jerusalem) ---------- 
+  /* ---------- Date helpers (Asia/Jerusalem) ---------- */
   function jerusalemParts(d = new Date()) {
     const fmt = new Intl.DateTimeFormat("en-CA", {
       timeZone: TZ,
@@ -1695,15 +1696,8 @@
     else if (currentScreen === "settings") renderSettings();
   });
 
-  // getInstalledRelatedApps (Chrome/Android) — hide install if already present
-  if (navigator.getInstalledRelatedApps) {
-    navigator.getInstalledRelatedApps().then((apps) => {
-      if (apps && apps.length) {
-        relatedAppsInstalled = true;
-        updateInstallUi();
-      }
-    }).catch(() => {});
-  }
+  // Do not auto-hide via getInstalledRelatedApps — false positives hide the only install path.
+  // Hide only after appinstalled or real standalone display.
 
   /* ---------- Boot ---------- */
   updateHeader();
