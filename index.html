@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#c45c26" />
+  <meta name="description" content="מומנטום — מערכת הפעלה אישית. 8 הרגלים לבניית חיים של מומנטום." />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="מומנטום" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <title>מומנטום — מערכת הפעלה אישית</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="app-header">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">◆</span>
+        <div>
+          <h1 class="brand-title">מומנטום</h1>
+          <p class="brand-sub">מערכת הפעלה אישית</p>
+        </div>
+      </div>
+      <div class="header-meta">
+        <span id="today-label" class="today-label"></span>
+        <span id="streak-badge" class="streak-badge" title="רצף ימים"></span>
+      </div>
+    </header>
+
+    <main id="main" class="main"></main>
+
+    <nav class="tab-bar" role="tablist" aria-label="ניווט ראשי">
+      <button type="button" class="tab active" data-screen="today" aria-selected="true">
+        <span class="tab-icon">☀</span><span>היום</span>
+      </button>
+      <button type="button" class="tab" data-screen="progress" aria-selected="false">
+        <span class="tab-icon">▦</span><span>התקדמות</span>
+      </button>
+      <button type="button" class="tab" data-screen="habits" aria-selected="false">
+        <span class="tab-icon">◈</span><span>ההרגלים</span>
+      </button>
+      <button type="button" class="tab" data-screen="weekly" aria-selected="false">
+        <span class="tab-icon">◎</span><span>סקירה</span>
+      </button>
+      <button type="button" class="tab" data-screen="settings" aria-selected="false">
+        <span class="tab-icon">⚙</span><span>הגדרות</span>
+      </button>
+    </nav>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>

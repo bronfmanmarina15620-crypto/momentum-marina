@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="מומנטום">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#c45c26"/>
+      <stop offset="100%" stop-color="#9a3f14"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="#faf6f1"/>
+  <rect x="48" y="48" width="416" height="416" rx="80" fill="url(#g)"/>
+  <path d="M128 320 L208 180 L256 260 L304 140 L384 320 Z" fill="none" stroke="#fff" stroke-width="28" stroke-linejoin="round" stroke-linecap="round"/>
+  <circle cx="384" cy="160" r="28" fill="#f0d5c4"/>
+</svg>
