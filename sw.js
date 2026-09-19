@@ -1,5 +1,5 @@
 /* Service worker — cache shell for offline */
-const CACHE = "momentum-marina-v1.1";
+const CACHE = "momentum-marina-v1.2";
 const BASE = self.registration.scope;
 const ASSETS = [
   BASE,

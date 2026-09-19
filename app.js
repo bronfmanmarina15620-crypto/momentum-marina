@@ -158,16 +158,16 @@
     {
       id: 6,
       title: "מדדים",
-      short: "Northstar + Scorecard + סקירה",
+      short: "מספר אחד + מבט יומי + סקירה שבועית",
       layer: "ארכיטקטורה חיצונית",
       checks: [
-        { key: "northstarLogged", label: "רשמתי את מדד כוכב הצפון", hint: "המספר האחד שמניע את המחט" },
-        { key: "scorecard", label: "מילאתי Scorecard יומי", hint: "חיבור רגשי לנתונים" },
-        { key: "constraint", label: "פונקציית אילוץ / שיחה על הנתונים", hint: "מחויבות שבועית קשיחה" },
+        { key: "northstarLogged", label: "רשמתי מדד כוכב הצפון", hint: "המספר האחד שבחרת בהגדרות — האם השבוע זז לכיוון הנכון" },
+        { key: "scorecard", label: "מילאתי כרטיס יומי (Scorecard)", hint: "מבט קצר: המספר + איך את מרגישה לגביו — לא אקסל" },
+        { key: "constraint", label: "סקירה שבועית (פונקציית אילוץ)", hint: "שיחה קבועה עם עצמך על המספרים — מחויבות שלא מדלגים" },
       ],
       fields: [
-        { key: "northstarValue", type: "number", label: "ערך Northstar להיום", placeholder: "מספר" },
-        { key: "scoreNote", type: "textarea", label: "הערת Scorecard", placeholder: "מה המספרים אומרים…" },
+        { key: "northstarValue", type: "number", label: "המספר של היום", placeholder: "לפי המדד שבחרת בהגדרות" },
+        { key: "scoreNote", type: "textarea", label: "מה המספר אומר לי היום", placeholder: "איך את מרגישה לגביו? מה הוא מספר לך…" },
       ],
     },
     {
@@ -220,7 +220,7 @@
     3: "מינימום: עדיפות אחת + תודה אחת. משפך מצומצם עדיין משפך.",
     4: "מינימום: שאלה אחת בוערת + יישום קצר אחד.",
     5: "מינימום: הסרת הסחה אחת קטנה מהסביבה.",
-    6: "מינימום: מספר אחד של כוכב הצפון — בלי סיפור.",
+    6: "מינימום: רשמי מספר אחד של כוכב הצפון — בלי סיפור ארוך.",
     7: "מינימום: ניצחון קטן אחד. עשוי עדיף ממושלם.",
     8: "מינימום: בחירה קשה אחת קטנה היום — ואמרי: מצוין.",
   };
@@ -808,13 +808,25 @@
           ? `<span class="chip warn">${doneH}/${checks.length}</span>`
           : `<span class="chip">${checks.length} פריטים</span>`;
 
+      const sunday = isSunday(key);
       const checksHtml = checks
         .map((ch) => {
+          let label = ch.label;
+          let hint = ch.hint;
+          if (h.id === 6 && ch.key === "constraint") {
+            if (sunday) {
+              label = "עשיתי סקירה שבועית";
+              hint = "שיחה קבועה עם עצמך (או מישהי) על המספרים — לא מדלגים";
+            } else {
+              label = "סקירה שבועית (רלוונטי ליום ראשון)";
+              hint = "בימי חול מספיק המספר והתחושה — ביום ראשון עושים את השיחה השבועית";
+            }
+          }
           const id = `c-${h.id}-${ch.key}`;
           const checked = day.checks[`${h.id}:${ch.key}`] ? "checked" : "";
           return `<div class="check-row">
             <input type="checkbox" id="${id}" data-habit="${h.id}" data-check="${ch.key}" ${checked}/>
-            <label for="${id}">${escapeHtml(ch.label)}<span class="hint">${escapeHtml(ch.hint)}</span></label>
+            <label for="${id}">${escapeHtml(label)}<span class="hint">${escapeHtml(hint)}</span></label>
           </div>`;
         })
         .join("");
@@ -823,21 +835,49 @@
         .map((f) => {
           const val = day.fields[`${h.id}:${f.key}`] ?? "";
           const common = `data-habit="${h.id}" data-field="${f.key}"`;
-          if (f.type === "textarea") {
-            return `<div class="field"><label>${escapeHtml(f.label)}</label>
-              <textarea ${common} placeholder="${escapeHtml(f.placeholder || "")}">${escapeHtml(val)}</textarea></div>`;
+          let label = f.label;
+          let placeholder = f.placeholder || "";
+          if (h.id === 6 && f.key === "northstarValue") {
+            const ns = state.settings.northstarName || "המדד שבחרת בהגדרות";
+            label = `המספר של היום לפי «${ns}»`;
+            placeholder = "למשל: 4 · לפי המדד שבחרת בהגדרות";
           }
-          return `<div class="field"><label>${escapeHtml(f.label)}</label>
+          if (h.id === 6 && f.key === "scoreNote") {
+            label = "מה המספר אומר לי היום";
+            placeholder = "איך את מרגישה לגביו? מה הוא מספר לך…";
+          }
+          if (f.type === "textarea") {
+            return `<div class="field"><label>${escapeHtml(label)}</label>
+              <textarea ${common} placeholder="${escapeHtml(placeholder)}">${escapeHtml(val)}</textarea></div>`;
+          }
+          return `<div class="field"><label>${escapeHtml(label)}</label>
             <input type="${f.type === "number" ? "number" : "text"}" ${common}
-              value="${escapeHtml(val)}" placeholder="${escapeHtml(f.placeholder || "")}"/></div>`;
+              value="${escapeHtml(val)}" placeholder="${escapeHtml(placeholder)}"/></div>`;
         })
         .join("");
 
-      // Habit 6: show northstar name from settings
+      // Habit 6: explainer + northstar name from settings
       let extra = "";
       if (h.id === 6) {
-        extra = `<p class="muted" style="margin-bottom:8px">כוכב הצפון: <strong>${escapeHtml(state.settings.northstarName || "—")}</strong>
-          ${state.settings.northstarTarget ? ` · יעד: ${escapeHtml(state.settings.northstarTarget)}` : ""}</p>`;
+        const nsName = state.settings.northstarName || "עדיין לא נבחר — לך להגדרות";
+        const nsTarget = state.settings.northstarTarget
+          ? ` · יעד: ${escapeHtml(state.settings.northstarTarget)}`
+          : "";
+        const dayNote = sunday
+          ? `<p class="metrics-day-note"><button type="button" class="linkish" data-go-weekly>פתחי את הסקירה השבועית ←</button></p>`
+          : `<p class="metrics-day-note muted">הסקירה השבועית רלוונטית בעיקר ליום ראשון. היום מספיק לרשום את המספר ואיך את מרגישה.</p>`;
+        extra = `
+          <details class="explainer">
+            <summary>מה זה אומר?</summary>
+            <ul>
+              <li><strong>מדד כוכב הצפון</strong> (Northstar) — מספר אחד שבוחרים שמסמן אם השבוע או החודש זז לכיוון הנכון. לא עשרות מדדים. את קובעת את השם ב«הגדרות».</li>
+              <li><strong>כרטיס יומי</strong> (Scorecard) — מבט קצר על המספר + איך את מרגישה לגביו. לא טבלת אקסל.</li>
+              <li><strong>סקירה שבועית</strong> (פונקציית אילוץ) — שיחה קבועה עם עצמך (או מישהי) על המספרים. מחויבות שלא מדלגים.</li>
+            </ul>
+            <p class="explainer-example"><strong>דוגמה ליום:</strong> «היום כוכב הצפון שלי = 4 (ימי הרגלים שהשלמתי). המספר אומר לי שאני בכיוון, גם אם הייתי עייפה. ביום ראשון אשב 10 דקות עם המספרים.»</p>
+          </details>
+          <p class="muted ns-line">המדד שלך: <strong>${escapeHtml(nsName)}</strong>${nsTarget}</p>
+          ${dayNote}`;
       }
       if (h.id === 8 && state.settings.challenge) {
         extra = `<p class="muted" style="margin-bottom:8px">האתגר השמור: <strong>${escapeHtml(state.settings.challenge)}</strong></p>`;
@@ -927,6 +967,9 @@
   }
 
   function bindTodayEvents() {
+    main.querySelectorAll("[data-go-weekly]").forEach((el) => {
+      el.addEventListener("click", () => switchScreen("weekly"));
+    });
     main.querySelectorAll('input[type="checkbox"][data-check]').forEach((el) => {
       el.addEventListener("change", () => {
         // flush in-progress reflection text before re-render
@@ -1194,6 +1237,11 @@
         <h2><span class="habit-num">${h.id}</span> ${escapeHtml(h.title)}</h2>
         <p class="muted">${escapeHtml(h.short)}</p>
         <p style="margin:8px 0;font-size:0.85rem">שכבה: ${escapeHtml(h.layer)}</p>
+        ${h.id === 6 ? `<div class="explainer open-plain"><ul>
+          <li><strong>מדד כוכב הצפון</strong> — מספר אחד שמסמן אם את בכיוון הנכון (נקבע בהגדרות).</li>
+          <li><strong>כרטיס יומי</strong> — המספר + איך את מרגישה לגביו.</li>
+          <li><strong>סקירה שבועית</strong> — שיחה קבועה על המספרים, בעיקר ביום ראשון.</li>
+        </ul></div>` : ""}
         <h3>מה לעשות</h3>
         <ul style="padding-inline-start:18px;font-size:0.9rem;line-height:1.6">${checks}</ul>
         <div class="btn-row"><button type="button" class="btn block" id="go-today">לסמן במסך היום</button></div>
@@ -1262,8 +1310,8 @@
       </section>
 
       <section class="card">
-        <h2>פונקציית אילוץ</h2>
-        <p class="muted">דיבור כנה עם עצמך על הנתונים — מחויבות קשיחה לשבוע הבא</p>
+        <h2>סקירה שבועית</h2>
+        <p class="muted">שיחה קבועה עם עצמך (או מישהי) על המספרים — מחויבות שלא מדלגים. זה מה שקוראים לפעמים «פונקציית אילוץ».</p>
         ${autoHint}
         <div class="field"><label>ניצחונות השבוע</label>
           <textarea id="w-wins" placeholder="מה עבד…">${escapeHtml(winsValue)}</textarea></div>
@@ -1301,11 +1349,19 @@
       <h2 class="section-title">הגדרות</h2>
 
       <section class="card">
-        <h2>כוכב הצפון</h2>
-        <div class="field"><label>שם המדד</label>
-          <input type="text" id="ns-name" value="${escapeHtml(s.northstarName)}" placeholder="למשל: דקות יצירה ממוקדות"/></div>
-        <div class="field"><label>יעד (אופציונלי)</label>
-          <input type="text" id="ns-target" value="${escapeHtml(s.northstarTarget || "")}" placeholder="למשל: 90 דקות"/></div>
+        <h2>מדד כוכב הצפון</h2>
+        <p class="help-blurb">בחרי <strong>מספר אחד</strong> שחשוב לך — לא רשימה של עשרות. כל יום תרשמי רק אותו, כדי לראות אם השבוע זז לכיוון הנכון. אפשר לשנות את השם בכל רגע.</p>
+        <div class="field"><label>שם המדד שלי</label>
+          <input type="text" id="ns-name" value="${escapeHtml(s.northstarName)}" placeholder="למשל: מספר ימי הרגלים שהשלמתי"/></div>
+        <p class="muted suggest-label">רעיונות — לחצי להעתיק לשם המדד:</p>
+        <div class="suggest-chips" id="ns-suggestions">
+          <button type="button" class="suggest-chip" data-ns-suggest="מספר ימי הרגלים שהשלמתי">מספר ימי הרגלים שהשלמתי</button>
+          <button type="button" class="suggest-chip" data-ns-suggest="דקות תנועה">דקות תנועה</button>
+          <button type="button" class="suggest-chip" data-ns-suggest="דקות יצירה ממוקדות">דקות יצירה ממוקדות</button>
+          <button type="button" class="suggest-chip" data-ns-suggest="שעות שינה איכותית">שעות שינה איכותית</button>
+        </div>
+        <div class="field"><label>יעד שבועי/חודשי (אופציונלי)</label>
+          <input type="text" id="ns-target" value="${escapeHtml(s.northstarTarget || "")}" placeholder="למשל: 5 ימים בשבוע / 90 דקות"/></div>
       </section>
 
       <section class="card">
@@ -1353,7 +1409,7 @@
       <section class="card">
         <h2>אודות</h2>
         <p class="muted">מומנטום — מערכת הפעלה אישית. אפליקציה אישית ללא חשבונות וללא רשת חברתית. אזור זמן: Asia/Jerusalem.</p>
-        <p class="muted" style="margin-top:6px">גרסה 1.1 · סיכום יום + תובנות · נשמר לאחרונה: ${escapeHtml(state.savedAt ? new Date(state.savedAt).toLocaleString("he-IL", { timeZone: TZ }) : "—")}</p>
+        <p class="muted" style="margin-top:6px">גרסה 1.2 · מדדים ברורים יותר · נשמר לאחרונה: ${escapeHtml(state.savedAt ? new Date(state.savedAt).toLocaleString("he-IL", { timeZone: TZ }) : "—")}</p>
       </section>
     `;
 
@@ -1390,6 +1446,17 @@
       document.getElementById(id).addEventListener("change", () => {
         persistSettings();
         toast("נשמר");
+      });
+    });
+
+    document.querySelectorAll("[data-ns-suggest]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const name = btn.getAttribute("data-ns-suggest");
+        const input = document.getElementById("ns-name");
+        if (!input || !name) return;
+        input.value = name;
+        persistSettings();
+        toast("שם המדד עודכן");
       });
     });
 
